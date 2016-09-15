@@ -32,7 +32,7 @@ struct ClientControl {
 	std::atomic<int> numRequestsLeft;
 
 	/* Client parameters */
-	std::string url;
+	std::vector<std::string> url;
 	int concurrency;
 	double thinkTime;
 	double timeout;
@@ -184,7 +184,7 @@ int httpClientMain(int id, ClientControl &control, ClientData &data)
 
 	CURL *curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_URL, control.url.c_str());
+	curl_easy_setopt(curl, CURLOPT_URL, control.url[id].c_str());
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, nullWriter);
 	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseFlags);
@@ -256,7 +256,7 @@ int httpClientMain(int id, ClientControl &control, ClientData &data)
 			long curlTimeout = 0; /* infinity */
 			if (!isinf(timeout))
 				curlTimeout = std::max(static_cast<long>(timeout * 1000.0), 1L);
-			curl_easy_setopt(curl, CURLOPT_URL, control.url.c_str());
+			curl_easy_setopt(curl, CURLOPT_URL, control.url[id].c_str());
 			curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, curlTimeout);
 			curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, curlTimeout);
 
@@ -429,8 +429,8 @@ void processInput(std::string &input, ClientControl &control)
 			std::string value = keyvalue[1];
 			
 			if (key == "url") {
-				control.url = value;
-				printf("time=%.6f url=%s\n", now(), control.url.c_str());
+				control.url[0] = value;
+				printf("time=%.6f url=%s\n", now(), control.url[0].c_str());
 			}
 			else if (key == "thinktime") {
 				control.thinkTime = atof(value.c_str());
@@ -523,7 +523,7 @@ int main(int argc, char **argv)
 	ClientControl control;
 	control.running = true;
 	control.numRequestsLeft = numRequestsLeft;
-	control.url = url;
+	control.url[0] = url;
 	control.concurrency = concurrency;
 	control.thinkTime = thinkTime;
 	control.timeout = timeout;
