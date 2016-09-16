@@ -534,7 +534,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	
-	if (!url.empty() && !urlFile.empty()) {
+	if (!(url.empty() && urlFile.empty())) {
 		std::cerr << "Error: you cannot specify both URL and URL file." << std::endl;
 		return -1;
 	}
