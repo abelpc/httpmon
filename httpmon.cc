@@ -186,7 +186,7 @@ int httpClientMain(int id, ClientControl &control, ClientData &data)
 
 	CURL *curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_URL, control.url[id].c_str());
+	curl_easy_setopt(curl, CURLOPT_URL, control.url[control.url.size() > 1 ? id : 0].c_str());
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, nullWriter);
 	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseFlags);
@@ -513,16 +513,16 @@ int main(int argc, char **argv)
 	po::options_description desc("Real-time monitor of a HTTP server's throughput and latency");
 	desc.add_options()
 		("help", "produce help message")
-		("url", po::value<std::string>(&url), "set URL to request")
-		("urlfile", po::value<std::string>(&urlFile), "set URL to request")
 		("concurrency", po::value<int>(&concurrency)->default_value(100), "set concurrency (number of HTTP client threads)")
-		("timeout", po::value<double>(&timeout)->default_value(INFINITY), "set HTTP client timeout in seconds (default: infinity)")
-		("thinktime", po::value<double>(&thinkTime)->default_value(0), "add a random (à la Poisson) interval between requests in seconds")
-		("interval", po::value<double>(&interval)->default_value(1), "set report interval in seconds")
-		("open", "use the open model with client-side queuing, i.e., arrival times do not depend on the response time of the server")
 		("count", po::value<int>(&numRequestsLeft)->default_value(std::numeric_limits<int>::max()), "stop after sending this many requests (default: do not stop)")
 		("deterministic", "do not seed RNG; useful to compare two systems with the exact same requests (default: no)")
 		("dump", "dump all data about requests to httpmon-dump.csv")
+		("interval", po::value<double>(&interval)->default_value(1), "set report interval in seconds")
+		("open", "use the open model with client-side queuing, i.e., arrival times do not depend on the response time of the server")
+		("thinktime", po::value<double>(&thinkTime)->default_value(0), "add a random (à la Poisson) interval between requests in seconds")
+		("timeout", po::value<double>(&timeout)->default_value(INFINITY), "set HTTP client timeout in seconds (default: infinity)")
+		("url", po::value<std::string>(&url), "set URL to request")
+		("urlfile", po::value<std::string>(&urlFile), "set URL list file to request for each concurrency")
 	;
 
 	po::variables_map vm;
