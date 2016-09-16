@@ -16,6 +16,8 @@
 #include <signal.h>
 #include <thread>
 #include <vector>
+#include <iostream>
+#include <fstream>
 
 #define RESPONSEFLAGS_CONTENT 0x01
 #define RESPONSEFLAGS_OPTION1 0x02
@@ -389,6 +391,30 @@ void report(ClientData &_data, AccumulatedData &accData)
 	);
 }
 
+int processUrlFile(std::ifstream &file, ClientControl &control)
+{
+        std::string urlTemp;
+
+        for (int i = 0; i < control.concurrency; i++)
+	{
+		/* EOF possibly reached */
+        	if (!(std::getline(file, urlTemp)))
+	        {
+			/* File Rewinding */
+                	file.clear();
+	                file.seekg(0, std::ios::beg);
+
+        	        if (!std::getline(file, urlTemp))
+			{
+				std::cerr << "Error reading URL file" << std::endl;
+				return -1;
+			}
+	        }
+		control.url.push_back(urlTemp);
+	}
+	return 0;
+}
+
 void processInput(std::string &input, ClientControl &control)
 {
 	/* Store last size */
@@ -467,6 +493,8 @@ int main(int argc, char **argv)
 	 * Initialize
 	 */
 	std::string url;
+	std::string urlFile;
+	std::ifstream file;
 	int concurrency;
 	double timeout;
 	double thinkTime;
@@ -486,6 +514,7 @@ int main(int argc, char **argv)
 	desc.add_options()
 		("help", "produce help message")
 		("url", po::value<std::string>(&url), "set URL to request")
+		("urlfile", po::value<std::string>(&urlFile), "set URL to request")
 		("concurrency", po::value<int>(&concurrency)->default_value(100), "set concurrency (number of HTTP client threads)")
 		("timeout", po::value<double>(&timeout)->default_value(INFINITY), "set HTTP client timeout in seconds (default: infinity)")
 		("thinktime", po::value<double>(&thinkTime)->default_value(0), "add a random (à la Poisson) interval between requests in seconds")
@@ -505,8 +534,13 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	
-	if (url.empty()) {
-		std::cerr << "Warning, empty URL given. Expect high CPU usage and many errors." << std::endl;
+	if (url.empty() && urlFile.empty()) {
+		std::cerr << "Error: you cannot specify both URL and URL file." << std::endl;
+		return -1;
+	}
+
+	if (url.empty() || urlFile.empty()) {
+		std::cerr << "Warning, empty URL/URL file given. Expect high CPU usage and many errors." << std::endl;
 	}
 
 	open = vm.count("open");
@@ -523,12 +557,20 @@ int main(int argc, char **argv)
 	ClientControl control;
 	control.running = true;
 	control.numRequestsLeft = numRequestsLeft;
-	control.url[0] = url;
 	control.concurrency = concurrency;
 	control.thinkTime = thinkTime;
 	control.timeout = timeout;
 	control.open = open;
 	control.deterministic = deterministic;
+
+	if (urlFile.empty())
+	{
+		control.url.push_back(url);
+	}
+	else {
+		file.open(urlFile);
+		if (processUrlFile(file, control) < 0) return -1;
+	}
 
 	/* Setup thread data */
 	ClientData data;
