@@ -35,6 +35,7 @@ struct ClientControl {
 
 	/* Client parameters */
 	std::vector<std::string> url;
+	std::string urlFile;
 	int concurrency;
 	double thinkTime;
 	double timeout;
@@ -186,7 +187,7 @@ int httpClientMain(int id, ClientControl &control, ClientData &data)
 
 	CURL *curl = curl_easy_init();
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-	curl_easy_setopt(curl, CURLOPT_URL, control.url[control.url.size() > 1 ? id : 0].c_str());
+	curl_easy_setopt(curl, CURLOPT_URL, control.url[id % control.url.size()].c_str());
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, nullWriter);
 	curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
 	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseFlags);
@@ -258,7 +259,7 @@ int httpClientMain(int id, ClientControl &control, ClientData &data)
 			long curlTimeout = 0; /* infinity */
 			if (!isinf(timeout))
 				curlTimeout = std::max(static_cast<long>(timeout * 1000.0), 1L);
-			curl_easy_setopt(curl, CURLOPT_URL, control.url[id].c_str());
+			curl_easy_setopt(curl, CURLOPT_URL, control.url[id % control.url.size()].c_str());
 			curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, curlTimeout);
 			curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, curlTimeout);
 
@@ -391,27 +392,24 @@ void report(ClientData &_data, AccumulatedData &accData)
 	);
 }
 
-int processUrlFile(std::ifstream &file, ClientControl &control)
+int processUrlFile(ClientControl &control)
 {
+	std::ifstream file;
         std::string urlTemp;
+	control.url.clear(); 
 
-        for (int i = 0; i < control.concurrency; i++)
-	{
-		/* EOF possibly reached */
-        	if (!(std::getline(file, urlTemp)))
-	        {
-			/* File Rewinding */
-                	file.clear();
-	                file.seekg(0, std::ios::beg);
-
-        	        if (!std::getline(file, urlTemp))
-			{
-				std::cerr << "Error reading URL file" << std::endl;
-				return -1;
-			}
-	        }
-		control.url.push_back(urlTemp);
+	file.open(control.urlFile, std::ios::out);
+	if (file.is_open()) {
+		while (std::getline(file, urlTemp)) 
+		{
+			control.url.push_back(urlTemp);
+		}
 	}
+	else {
+		return -1;
+	}
+
+	file.close();
 	return 0;
 }
 
@@ -455,8 +453,21 @@ void processInput(std::string &input, ClientControl &control)
 			std::string value = keyvalue[1];
 			
 			if (key == "url") {
-				control.url[0] = value;
+				control.url.clear();
+				control.url.push_back(value.c_str());
 				printf("time=%.6f url=%s\n", now(), control.url[0].c_str());
+			}
+			else if (key == "urlfile") {
+				if (value.c_str() != control.urlFile) {
+					control.urlFile = value.c_str();
+
+			                if (processUrlFile(control) < 0) {
+						fprintf(stderr, "Error opening %s\n", value.c_str());
+					}
+					else {
+						std::cerr << "time=%.6f" << now() << " urlFile=%s" << control.urlFile << std::endl;
+					}
+				}
 			}
 			else if (key == "thinktime") {
 				control.thinkTime = atof(value.c_str());
@@ -494,7 +505,6 @@ int main(int argc, char **argv)
 	 */
 	std::string url;
 	std::string urlFile;
-	std::ifstream file;
 	int concurrency;
 	double timeout;
 	double thinkTime;
@@ -522,7 +532,7 @@ int main(int argc, char **argv)
 		("thinktime", po::value<double>(&thinkTime)->default_value(0), "add a random (à la Poisson) interval between requests in seconds")
 		("timeout", po::value<double>(&timeout)->default_value(INFINITY), "set HTTP client timeout in seconds (default: infinity)")
 		("url", po::value<std::string>(&url), "set URL to request")
-		("urlfile", po::value<std::string>(&urlFile), "set URL list file to request for each concurrency")
+		("urlfile", po::value<std::string>(&urlFile), "set URL list file to request (each URL will have concurrency as set by '--concurrency' option)")
 	;
 
 	po::variables_map vm;
@@ -568,8 +578,8 @@ int main(int argc, char **argv)
 		control.url.push_back(url);
 	}
 	else {
-		file.open(urlFile);
-		if (processUrlFile(file, control) < 0) return -1;
+		control.urlFile = urlFile;
+		if (processUrlFile(control) < 0) return -1;
 	}
 
 	/* Setup thread data */
@@ -591,7 +601,7 @@ int main(int argc, char **argv)
 
 	/* Start client threads */
 	std::vector<std::thread> httpClientThreads;
-	for (int i = 0; i < concurrency; i++) {
+	for (int i = 0; i < (int) control.url.size() * concurrency; i++) {
 		httpClientThreads.emplace_back(httpClientMain, i,
 			std::ref(control), std::ref(data));
 	}
@@ -628,11 +638,11 @@ int main(int argc, char **argv)
 		processInput(prevInput, control);
 
 		/* Check if requested concurrency increased */
-		while ((int)httpClientThreads.size() < control.concurrency)
+		while ((int)httpClientThreads.size() < (int) (control.concurrency * control.url.size()))
 			httpClientThreads.emplace_back(httpClientMain,
 				httpClientThreads.size(), std::ref(control), std::ref(data));
 		/* Check if requested concurrency decreased */
-		while ((int)httpClientThreads.size() > control.concurrency) {
+		while ((int)httpClientThreads.size() > (int) (control.concurrency * control.url.size())) {
 			pthread_kill(httpClientThreads.back().native_handle(), SIGUSR2);
 			httpClientThreads.back().detach();
 			httpClientThreads.pop_back();
